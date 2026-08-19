@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace ProductManagement.Tests.Auth;
 
-public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>
+public class AuthWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"product-management-tests-{Guid.NewGuid():N}.db");
 
