@@ -1,0 +1,14 @@
+"use strict";
+const assert = require("node:assert/strict");
+const { normalizeCurrency, formatCurrency, currencyKeyResult } = require("../src/ProductManagement.Web/wwwroot/js/product-management.js");
+assert.equal(normalizeCurrency("Rp 25,00"), "25");
+assert.equal(normalizeCurrency("Rp 1.000,00"), "1000");
+assert.equal(normalizeCurrency("Rp 1.000.000,00"), "1000000");
+assert.equal(formatCurrency("25").replace(/\s/g, " "), "Rp 25,00");
+assert.equal(formatCurrency("1000").replace(/\s/g, " "), "Rp 1.000,00");
+assert.equal(formatCurrency("1000000").replace(/\s/g, " "), "Rp 1.000.000,00");
+assert.equal(currencyKeyResult("120", "5"), "1205");
+assert.equal(currencyKeyResult("1205", "Backspace"), "120");
+assert.equal(currencyKeyResult("1205", "Delete"), "");
+assert.equal(currencyKeyResult("1205", "7", true), "7");
+console.log("currency helpers: 10 assertions passed");

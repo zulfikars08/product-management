@@ -1,6 +1,22 @@
 (() => {
     "use strict";
 
+    const idrFormatter = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const normalizeCurrency = value => {
+        const text = String(value ?? "").trim();
+        const integerText = /^Rp\s*/i.test(text) ? text.replace(/^Rp\s*/i, "").replace(/,\d{0,2}$/, "") : text;
+        return integerText.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+    };
+    const formatCurrency = value => value === "" ? "" : idrFormatter.format(Number(value));
+    const currencyKeyResult = (raw, key, replacing = false) => {
+        if (/^\d$/.test(key)) return replacing ? key : `${raw}${key}`.replace(/^0+(?=\d)/, "");
+        if (key === "Backspace") return replacing ? "" : raw.slice(0, -1);
+        if (key === "Delete") return "";
+        return raw;
+    };
+    if (typeof module !== "undefined" && module.exports) module.exports = { normalizeCurrency, formatCurrency, currencyKeyResult };
+    if (typeof document === "undefined") return;
+
     const tokenKey = "productManagementToken";
     const emailKey = "productManagementEmail";
     const elements = Object.fromEntries([
@@ -9,7 +25,7 @@
         "filterForm", "clearFiltersButton", "filterName", "minPrice", "maxPrice", "loadingState",
         "emptyState", "productTable", "productRows", "productForm", "productModal", "productModalTitle",
         "productName", "productDescription", "productPrice", "saveProductButton", "deleteModal",
-        "deleteProductName", "confirmDeleteButton"
+        "deleteProductName", "confirmDeleteButton", "productCount"
     ].map(id => [id, document.getElementById(id)]));
 
     const productModal = new bootstrap.Modal(elements.productModal);
@@ -18,6 +34,35 @@
     let editingProductId = null;
     let pendingDeleteProduct = null;
     let products = [];
+    const currencyValues = new WeakMap();
+
+    function setCurrencyValue(input, value) {
+        const raw = normalizeCurrency(value);
+        currencyValues.set(input, raw);
+        input.value = formatCurrency(raw);
+    }
+
+    function getCurrencyValue(input) {
+        return currencyValues.get(input) ?? normalizeCurrency(input.value);
+    }
+
+    function initializeCurrencyInputs() {
+        document.querySelectorAll("[data-currency-input]").forEach(input => {
+            setCurrencyValue(input, input.value);
+            input.addEventListener("keydown", event => {
+                if (event.ctrlKey || event.metaKey || event.altKey || !(/^\d$/.test(event.key) || event.key === "Backspace" || event.key === "Delete")) return;
+                event.preventDefault();
+                const replacing = input.selectionStart !== input.selectionEnd;
+                setCurrencyValue(input, currencyKeyResult(getCurrencyValue(input), event.key, replacing));
+                input.setSelectionRange(input.value.length, input.value.length);
+            });
+            input.addEventListener("paste", event => {
+                event.preventDefault();
+                setCurrencyValue(input, normalizeCurrency(event.clipboardData.getData("text")));
+            });
+            input.addEventListener("input", () => setCurrencyValue(input, input.value));
+        });
+    }
 
     function showToast(type, title, message = "") {
         const toast = document.createElement("article");
@@ -159,8 +204,8 @@
         elements.productTable.classList.add("d-none");
         const query = new URLSearchParams();
         if (elements.filterName.value.trim()) query.set("name", elements.filterName.value.trim());
-        if (elements.minPrice.value) query.set("minPrice", elements.minPrice.value);
-        if (elements.maxPrice.value) query.set("maxPrice", elements.maxPrice.value);
+        if (getCurrencyValue(elements.minPrice)) query.set("minPrice", Number(getCurrencyValue(elements.minPrice)));
+        if (getCurrencyValue(elements.maxPrice)) query.set("maxPrice", Number(getCurrencyValue(elements.maxPrice)));
         try {
             products = await apiFetch(`/api/products${query.size ? `?${query}` : ""}`);
             renderProducts();
@@ -187,12 +232,13 @@
 
     function renderProducts() {
         elements.productRows.replaceChildren();
+        elements.productCount.textContent = products.length.toLocaleString("id-ID");
         elements.emptyState.classList.toggle("d-none", products.length > 0);
         elements.productTable.classList.toggle("d-none", products.length === 0);
         for (const product of products) {
             const row = document.createElement("tr");
             row.append(createCell(product.name), createCell(product.description, "product-description"));
-            row.append(createCell(Number(product.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), "price-cell"));
+            row.append(createCell(idrFormatter.format(Number(product.price)), "price-cell"));
             row.append(createCell(new Date(product.createdAt).toLocaleString(), "date-cell"));
             const actions = document.createElement("td");
             actions.className = "table-actions";
@@ -210,7 +256,7 @@
         elements.productModalTitle.textContent = product ? "Edit product" : "Add product";
         elements.productName.value = product?.name ?? "";
         elements.productDescription.value = product?.description ?? "";
-        elements.productPrice.value = product?.price ?? "";
+        setCurrencyValue(elements.productPrice, product?.price ?? "");
         productModal.show();
         elements.productModal.addEventListener("shown.bs.modal", () => elements.productName.focus(), { once: true });
     }
@@ -222,7 +268,7 @@
         try {
             await apiFetch(updating ? `/api/products/${editingProductId}` : "/api/products", {
                 method: updating ? "PUT" : "POST",
-                body: JSON.stringify({ name: elements.productName.value, description: elements.productDescription.value, price: Number(elements.productPrice.value) })
+                body: JSON.stringify({ name: elements.productName.value, description: elements.productDescription.value, price: Number(getCurrencyValue(elements.productPrice)) })
             });
             productModal.hide();
             elements.productForm.reset();
@@ -281,13 +327,14 @@
     elements.confirmDeleteButton.addEventListener("click", confirmDelete);
     elements.deleteModal.addEventListener("hidden.bs.modal", () => { pendingDeleteProduct = null; });
     elements.filterForm.addEventListener("submit", event => { event.preventDefault(); loadProducts(); });
-    elements.clearFiltersButton.addEventListener("click", () => { elements.filterForm.reset(); loadProducts(); });
+    elements.clearFiltersButton.addEventListener("click", () => { elements.filterForm.reset(); setCurrencyValue(elements.minPrice, ""); setCurrencyValue(elements.maxPrice, ""); loadProducts(); });
     elements.addProductButton.addEventListener("click", () => openProductForm());
     elements.emptyAddButton.addEventListener("click", () => openProductForm());
     elements.logoutButton.addEventListener("click", () => clearSession());
 
     async function initialize() {
         initializePasswordToggles();
+        initializeCurrencyInputs();
         const token = sessionStorage.getItem(tokenKey);
         if (!token) return setAuthenticated(false);
         try {

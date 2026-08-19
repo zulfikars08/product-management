@@ -14,6 +14,7 @@ The project favors a small layered architecture, portable SQLite persistence, sa
 - Structured Serilog console and HTTP request logging
 - Safe RFC-style ProblemDetails responses for unexpected exceptions
 - Razor/MVC, Bootstrap, and vanilla JavaScript frontend using the HTTP API
+- Responsive enterprise catalog UI with reusable interactive IDR currency inputs; formatted text stays separate from numeric API values
 - Automated authentication, authorization, Product, validation, exception, and frontend integration tests
 
 ## Tech Stack

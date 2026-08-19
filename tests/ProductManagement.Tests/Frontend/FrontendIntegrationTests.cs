@@ -23,6 +23,8 @@ public sealed class FrontendIntegrationTests(AuthWebApplicationFactory factory)
         Assert.Contains("id=\"toastRegion\"", html);
         Assert.Contains("aria-live=\"polite\"", html);
         Assert.Contains("id=\"deleteModal\"", html);
+        Assert.Contains("id=\"productPrice\"", html);
+        Assert.Contains("data-currency-input", html);
         Assert.Contains("/js/product-management.js", html);
     }
 
@@ -35,6 +37,10 @@ public sealed class FrontendIntegrationTests(AuthWebApplicationFactory factory)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("function initializePasswordToggles()", script);
         Assert.Contains("function showToast(", script);
+        Assert.Contains("function initializeCurrencyInputs()", script);
+        Assert.Contains("const currencyValues = new WeakMap()", script);
+        Assert.Contains("new Intl.NumberFormat(\"id-ID\"", script);
+        Assert.Contains("getCurrencyValue(elements.productPrice)", script);
         Assert.Contains("function apiFetch(", script);
         Assert.Contains("/api/products", script);
         Assert.Contains("Authorization", script);
