@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using ProductManagement.Application.Auth.Interfaces;
 using ProductManagement.Application.Common.Interfaces;
+using ProductManagement.Application.Products;
+using ProductManagement.Application.Products.Interfaces;
 using ProductManagement.Domain.Entities;
 using ProductManagement.Infrastructure.Auth;
 using ProductManagement.Infrastructure.Persistence;
@@ -30,6 +32,7 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IProductService, ProductService>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
