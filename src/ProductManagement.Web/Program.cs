@@ -1,9 +1,15 @@
+using ProductManagement.Infrastructure;
+using ProductManagement.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+await app.Services.ApplyDatabaseMigrationsAsync();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -24,6 +30,5 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
-
 
 app.Run();
