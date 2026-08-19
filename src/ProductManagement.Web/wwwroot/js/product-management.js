@@ -4,25 +4,94 @@
     const tokenKey = "productManagementToken";
     const emailKey = "productManagementEmail";
     const elements = Object.fromEntries([
-        "message", "authPanel", "productPanel", "userEmail", "loginForm", "registerForm",
-        "logoutButton", "addProductButton", "emptyAddButton", "filterForm", "clearFiltersButton",
-        "filterName", "minPrice", "maxPrice", "loadingState", "emptyState", "productTable",
-        "productRows", "productForm", "productModal", "productModalTitle", "productName",
-        "productDescription", "productPrice", "saveProductButton"
+        "toastRegion", "authPanel", "productPanel", "userEmail", "loginForm", "registerForm",
+        "loginSubmitButton", "registerSubmitButton", "logoutButton", "addProductButton", "emptyAddButton",
+        "filterForm", "clearFiltersButton", "filterName", "minPrice", "maxPrice", "loadingState",
+        "emptyState", "productTable", "productRows", "productForm", "productModal", "productModalTitle",
+        "productName", "productDescription", "productPrice", "saveProductButton", "deleteModal",
+        "deleteProductName", "confirmDeleteButton"
     ].map(id => [id, document.getElementById(id)]));
 
-    const modal = new bootstrap.Modal(elements.productModal);
+    const productModal = new bootstrap.Modal(elements.productModal);
+    const deleteModal = new bootstrap.Modal(elements.deleteModal);
+    const noticeDurations = { success: 3500, info: 4000, warning: 5000, error: 6000 };
     let editingProductId = null;
+    let pendingDeleteProduct = null;
     let products = [];
 
-    function showMessage(text, type = "success") {
-        elements.message.textContent = text;
-        elements.message.className = `alert alert-${type}`;
+    function showToast(type, title, message = "") {
+        const toast = document.createElement("article");
+        toast.className = `notice-toast notice-${type}`;
+        toast.setAttribute("role", type === "error" ? "alert" : "status");
+
+        const indicator = document.createElement("span");
+        indicator.className = "notice-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        indicator.textContent = type === "success" ? "✓" : type === "error" ? "×" : type === "warning" ? "!" : "i";
+
+        const copy = document.createElement("div");
+        const heading = document.createElement("strong");
+        heading.className = "notice-title";
+        heading.textContent = title;
+        copy.append(heading);
+        if (message) {
+            const detail = document.createElement("p");
+            detail.className = "notice-message";
+            detail.textContent = message;
+            copy.append(detail);
+        }
+
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "notice-close";
+        close.setAttribute("aria-label", "Dismiss notification");
+        close.textContent = "×";
+        toast.append(indicator, copy, close);
+        elements.toastRegion.append(toast);
+        while (elements.toastRegion.children.length > 4) elements.toastRegion.firstElementChild.remove();
+        requestAnimationFrame(() => toast.classList.add("is-visible"));
+
+        let remaining = noticeDurations[type] ?? noticeDurations.info;
+        let startedAt;
+        let timer;
+        const dismiss = () => {
+            clearTimeout(timer);
+            toast.classList.add("is-leaving");
+            toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+            setTimeout(() => toast.remove(), 300);
+        };
+        const startTimer = () => { startedAt = Date.now(); timer = setTimeout(dismiss, remaining); };
+        const pauseTimer = () => { clearTimeout(timer); remaining -= Date.now() - startedAt; };
+        toast.addEventListener("mouseenter", pauseTimer);
+        toast.addEventListener("mouseleave", startTimer);
+        toast.addEventListener("focusin", pauseTimer);
+        toast.addEventListener("focusout", startTimer);
+        close.addEventListener("click", dismiss);
+        startTimer();
     }
 
-    function clearMessage() {
-        elements.message.textContent = "";
-        elements.message.className = "alert d-none";
+    function setBusy(button, busy, busyText) {
+        if (!button.dataset.idleText) button.dataset.idleText = button.textContent;
+        button.disabled = busy;
+        button.replaceChildren();
+        if (busy) {
+            const spinner = document.createElement("span");
+            spinner.className = "button-spinner";
+            spinner.setAttribute("aria-hidden", "true");
+            button.append(spinner, document.createTextNode(busyText));
+        } else button.textContent = button.dataset.idleText;
+    }
+
+    function initializePasswordToggles() {
+        document.querySelectorAll("[data-password-toggle]").forEach(button => {
+            const input = document.getElementById(button.dataset.passwordToggle);
+            button.addEventListener("click", () => {
+                const visible = input.type === "text";
+                input.type = visible ? "password" : "text";
+                button.setAttribute("aria-pressed", String(!visible));
+                button.setAttribute("aria-label", visible ? "Show password" : "Hide password");
+            });
+        });
     }
 
     function setAuthenticated(authenticated, email = "") {
@@ -31,11 +100,11 @@
         elements.userEmail.textContent = authenticated ? email : "";
     }
 
-    function clearSession(message) {
+    function clearSession(notify = false) {
         sessionStorage.removeItem(tokenKey);
         sessionStorage.removeItem(emailKey);
         setAuthenticated(false);
-        if (message) showMessage(message, "warning");
+        if (notify) showToast("warning", "Session expired", "Please sign in again.");
     }
 
     async function parseResponse(response) {
@@ -55,14 +124,20 @@
         const token = sessionStorage.getItem(tokenKey);
         if (protectedRequest && token) headers.set("Authorization", `Bearer ${token}`);
         if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-
-        const response = await fetch(url, { ...options, headers });
+        let response;
+        try { response = await fetch(url, { ...options, headers }); }
+        catch { throw new Error("Check your connection and try again.", { cause: "network" }); }
         const payload = await parseResponse(response);
         if (response.status === 401 && protectedRequest) {
-            clearSession("Your session has expired. Please sign in again.");
-            throw new Error("Session expired");
+            clearSession(true);
+            throw new Error("Session expired", { cause: "session" });
         }
-        if (!response.ok) throw new Error(errorMessage(payload, "The request could not be completed."));
+        if (!response.ok) {
+            const error = new Error(errorMessage(payload, "The request could not be completed."));
+            error.status = response.status;
+            error.payload = payload;
+            throw error;
+        }
         return payload;
     }
 
@@ -73,11 +148,7 @@
     }
 
     async function authenticate(endpoint, email, password) {
-        clearMessage();
-        const auth = await apiFetch(endpoint, {
-            method: "POST",
-            body: JSON.stringify({ email, password })
-        }, false);
+        const auth = await apiFetch(endpoint, { method: "POST", body: JSON.stringify({ email, password }) }, false);
         saveSession(auth);
         await loadProducts();
     }
@@ -90,15 +161,12 @@
         if (elements.filterName.value.trim()) query.set("name", elements.filterName.value.trim());
         if (elements.minPrice.value) query.set("minPrice", elements.minPrice.value);
         if (elements.maxPrice.value) query.set("maxPrice", elements.maxPrice.value);
-
         try {
             products = await apiFetch(`/api/products${query.size ? `?${query}` : ""}`);
             renderProducts();
         } catch (error) {
-            if (error.message !== "Session expired") showMessage(error.message, "danger");
-        } finally {
-            elements.loadingState.classList.add("d-none");
-        }
+            if (error.cause !== "session") showToast("error", "Request failed", error.message);
+        } finally { elements.loadingState.classList.add("d-none"); }
     }
 
     function createCell(text, className = "") {
@@ -121,17 +189,16 @@
         elements.productRows.replaceChildren();
         elements.emptyState.classList.toggle("d-none", products.length > 0);
         elements.productTable.classList.toggle("d-none", products.length === 0);
-
         for (const product of products) {
             const row = document.createElement("tr");
             row.append(createCell(product.name), createCell(product.description, "product-description"));
-            row.append(createCell(Number(product.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
-            row.append(createCell(new Date(product.createdAt).toLocaleString()));
+            row.append(createCell(Number(product.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), "price-cell"));
+            row.append(createCell(new Date(product.createdAt).toLocaleString(), "date-cell"));
             const actions = document.createElement("td");
-            actions.className = "text-end text-nowrap";
+            actions.className = "table-actions";
             actions.append(
-                actionButton("Edit", "btn btn-sm btn-outline-dark me-2", () => openProductForm(product)),
-                actionButton("Delete", "btn btn-sm btn-outline-danger", () => deleteProduct(product))
+                actionButton("Edit", "btn table-action me-1", () => openProductForm(product)),
+                actionButton("Delete", "btn table-action table-action-delete", () => openDeleteConfirmation(product))
             );
             row.append(actions);
             elements.productRows.append(row);
@@ -144,66 +211,83 @@
         elements.productName.value = product?.name ?? "";
         elements.productDescription.value = product?.description ?? "";
         elements.productPrice.value = product?.price ?? "";
-        modal.show();
-        elements.productName.focus();
+        productModal.show();
+        elements.productModal.addEventListener("shown.bs.modal", () => elements.productName.focus(), { once: true });
     }
 
     async function saveProduct(event) {
         event.preventDefault();
-        elements.saveProductButton.disabled = true;
-        const payload = {
-            name: elements.productName.value,
-            description: elements.productDescription.value,
-            price: Number(elements.productPrice.value)
-        };
+        const updating = editingProductId !== null;
+        setBusy(elements.saveProductButton, true, "Saving…");
         try {
-            await apiFetch(editingProductId ? `/api/products/${editingProductId}` : "/api/products", {
-                method: editingProductId ? "PUT" : "POST",
-                body: JSON.stringify(payload)
+            await apiFetch(updating ? `/api/products/${editingProductId}` : "/api/products", {
+                method: updating ? "PUT" : "POST",
+                body: JSON.stringify({ name: elements.productName.value, description: elements.productDescription.value, price: Number(elements.productPrice.value) })
             });
-            modal.hide();
+            productModal.hide();
             elements.productForm.reset();
-            showMessage(editingProductId ? "Product updated." : "Product created.");
             editingProductId = null;
+            showToast("success", updating ? "Product updated" : "Product created");
             await loadProducts();
         } catch (error) {
-            if (error.message !== "Session expired") showMessage(error.message, "danger");
-        } finally {
-            elements.saveProductButton.disabled = false;
-        }
+            if (error.cause !== "session") showToast(error.status === 400 ? "warning" : "error", error.status === 400 ? "Check the form" : "Couldn't save product", error.message);
+        } finally { setBusy(elements.saveProductButton, false); }
     }
 
-    async function deleteProduct(product) {
-        if (!window.confirm(`Delete ${product.name}?`)) return;
+    function openDeleteConfirmation(product) {
+        pendingDeleteProduct = product;
+        elements.deleteProductName.textContent = `“${product.name}”`;
+        deleteModal.show();
+    }
+
+    async function confirmDelete() {
+        if (!pendingDeleteProduct) return;
+        setBusy(elements.confirmDeleteButton, true, "Deleting…");
         try {
-            await apiFetch(`/api/products/${product.id}`, { method: "DELETE" });
-            showMessage("Product deleted.");
+            await apiFetch(`/api/products/${pendingDeleteProduct.id}`, { method: "DELETE" });
+            deleteModal.hide();
+            pendingDeleteProduct = null;
+            showToast("success", "Product deleted");
             await loadProducts();
         } catch (error) {
-            if (error.message !== "Session expired") showMessage(error.message, "danger");
-        }
+            if (error.cause !== "session") showToast("error", "Couldn't delete product", error.message);
+        } finally { setBusy(elements.confirmDeleteButton, false); }
     }
 
     elements.loginForm.addEventListener("submit", async event => {
         event.preventDefault();
-        try { await authenticate("/api/auth/login", document.getElementById("loginEmail").value, document.getElementById("loginPassword").value); }
-        catch (error) { showMessage(errorMessage(null, error.message === "The request could not be completed." ? "Invalid email or password." : error.message), "danger"); }
+        setBusy(elements.loginSubmitButton, true, "Signing in…");
+        try {
+            await authenticate("/api/auth/login", document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+            showToast("success", "Signed in", "You are now signed in.");
+        } catch (error) {
+            showToast("error", error.cause === "network" ? "Request failed" : "Sign in failed", error.cause === "network" ? error.message : "Check your email and password and try again.");
+        } finally { setBusy(elements.loginSubmitButton, false); }
     });
 
     elements.registerForm.addEventListener("submit", async event => {
         event.preventDefault();
-        try { await authenticate("/api/auth/register", document.getElementById("registerEmail").value, document.getElementById("registerPassword").value); }
-        catch (error) { showMessage(error.message, "danger"); }
+        setBusy(elements.registerSubmitButton, true, "Creating account…");
+        try {
+            await authenticate("/api/auth/register", document.getElementById("registerEmail").value, document.getElementById("registerPassword").value);
+            showToast("success", "Account created", "Your account is ready.");
+        } catch (error) {
+            const duplicate = error.status === 409;
+            showToast(duplicate ? "warning" : "error", duplicate ? "Account already exists" : error.status === 400 ? "Check the form" : "Request failed", error.message);
+        } finally { setBusy(elements.registerSubmitButton, false); }
     });
 
     elements.productForm.addEventListener("submit", saveProduct);
+    elements.confirmDeleteButton.addEventListener("click", confirmDelete);
+    elements.deleteModal.addEventListener("hidden.bs.modal", () => { pendingDeleteProduct = null; });
     elements.filterForm.addEventListener("submit", event => { event.preventDefault(); loadProducts(); });
     elements.clearFiltersButton.addEventListener("click", () => { elements.filterForm.reset(); loadProducts(); });
     elements.addProductButton.addEventListener("click", () => openProductForm());
     elements.emptyAddButton.addEventListener("click", () => openProductForm());
-    elements.logoutButton.addEventListener("click", () => { clearMessage(); clearSession(); });
+    elements.logoutButton.addEventListener("click", () => clearSession());
 
     async function initialize() {
+        initializePasswordToggles();
         const token = sessionStorage.getItem(tokenKey);
         if (!token) return setAuthenticated(false);
         try {
@@ -213,7 +297,7 @@
             setAuthenticated(true, email);
             await loadProducts();
         } catch (error) {
-            if (error.message !== "Session expired") clearSession("Please sign in again.");
+            if (error.cause !== "session") clearSession();
         }
     }
 

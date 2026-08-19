@@ -3,20 +3,23 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Secure product catalog management." />
     <title>@ViewData["Title"] - Product Management</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
-    <header class="app-header border-bottom">
-        <div class="container py-3 d-flex align-items-center justify-content-between gap-3">
-            <a class="brand text-decoration-none" asp-controller="Home" asp-action="Index">Product Management</a>
-            <span class="text-secondary small d-none d-sm-inline">ASP.NET Core assessment</span>
+    <a class="skip-link" href="#mainContent">Skip to content</a>
+    <header class="app-header">
+        <div class="app-container header-inner">
+            <a class="brand text-decoration-none" asp-controller="Home" asp-action="Index"><span class="brand-mark" aria-hidden="true">PM</span><span>Product Management</span></a>
+            <span class="header-note d-none d-sm-inline">Catalog workspace</span>
         </div>
     </header>
-    <main class="container py-4 py-lg-5" role="main">
+    <main id="mainContent" class="app-container" role="main">
         @RenderBody()
     </main>
+    <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
